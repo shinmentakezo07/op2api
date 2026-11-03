@@ -66,13 +66,80 @@ The example listens on `127.0.0.1:8080` for the API and `0.0.0.0:8081` for the W
 
 Command-line options:
 
-| Option        | Default       | Purpose                            |
-| ------------- | ------------- | ---------------------------------- |
-| `-config`     | `config.json` | Configuration file path.           |
-| `-listen`     | Unset         | Override the API listen address.   |
-| `-web-listen` | Unset         | Override the WebUI listen address. |
+| Option        | Default       | Purpose                                                                   |
+| ------------- | ------------- | ------------------------------------------------------------------------- |
+| `-config`     | `config.json` | Configuration file path.                                                  |
+| `-env`        | `.env`        | `.env` file loaded before the configuration; ignored when it is absent.    |
+| `-listen`     | Unset         | Override the API listen address.                                          |
+| `-web-listen` | Unset         | Override the WebUI listen address.                                        |
 
 The configuration directory must be writable for password migration, configuration saves, and model caches.
+
+## Environment variables
+
+Every setting can also come from the environment, which is the easiest way to run on a platform that has no file mounts (Railway, Render, Fly.io, a systemd unit with `Environment=`). Precedence is **environment > `config.json` > built-in defaults**, and an unset or empty variable leaves the file value alone.
+
+A `.env` file in the working directory is loaded before the configuration is read. A real environment variable always wins over the same name in `.env`, and an optional `export ` prefix and quoted values are accepted.
+
+```bash
+# .env
+OPENCODE2API_SERVER_KEYS=sk-local-1,sk-local-2
+OPENCODE2API_ANONYMOUS=true
+OPENCODE2API_WEBUI_PASSWORD=choose-a-long-password
+OPENCODE2API_LISTEN=0.0.0.0:8080
+```
+
+| Variable                                | Field                            |
+| --------------------------------------- | -------------------------------- |
+| `OPENCODE2API_LISTEN` / `LISTEN_ADDRESS` | `listen`                         |
+| `PORT`                                  | `listen`, as `0.0.0.0:<PORT>`    |
+| `OPENCODE2API_SERVER_KEYS`              | `server_keys`                    |
+| `OPENCODE2API_ZEN_KEYS`                 | `zen_keys`                       |
+| `OPENCODE2API_GO_KEYS`                  | `go_keys`                        |
+| `OPENCODE2API_ANONYMOUS`                | `anonymous`                      |
+| `OPENCODE2API_PROXIES`                  | `proxies`                        |
+| `OPENCODE2API_PROXYFILE`                | `proxyfile`                      |
+| `OPENCODE2API_PREFER`                   | `prefer`                         |
+| `OPENCODE2API_UPSTREAM_ZEN`             | `upstream.zen`                   |
+| `OPENCODE2API_UPSTREAM_GO`              | `upstream.go`                    |
+| `OPENCODE2API_UPSTREAM_ANONYMOUS`       | `upstream.anonymous`             |
+| `OPENCODE2API_RETRY_MAX_ATTEMPTS`       | `retry.max_attempts`             |
+| `OPENCODE2API_RETRY_TIMEOUT_SECONDS`    | `retry.timeout_seconds`          |
+| `OPENCODE2API_MODELS_REFRESH_SECONDS`   | `models.refresh_seconds`         |
+| `OPENCODE2API_FREE_ONLY`                | `models.free_only`               |
+| `OPENCODE2API_LOG_LEVEL`                | `logging.level`                  |
+| `OPENCODE2API_LOG_RING_SIZE`            | `logging.ring_size`              |
+| `OPENCODE2API_WEBUI_ENABLED`            | `webui.enabled`                  |
+| `OPENCODE2API_WEBUI_LISTEN` / `WEBUI_LISTEN_ADDRESS` | `webui.listen`      |
+| `OPENCODE2API_WEBUI_USERNAME`           | `webui.username`                 |
+| `OPENCODE2API_WEBUI_PASSWORD`           | `webui.password`                 |
+| `OPENCODE2API_WEBUI_SESSION_TTL_MINUTES`| `webui.session_ttl_minutes`      |
+| `OPENCODE2API_WARP_ENABLED`             | `warp.enabled`                   |
+| `OPENCODE2API_WARP_POOL_SIZE`           | `warp.pool_size`                 |
+| `OPENCODE2API_WARP_STACK`               | `warp.stack`                     |
+| `OPENCODE2API_WARP_SOURCE_IPV6`         | `warp.source_ipv6`               |
+| `OPENCODE2API_REASONING_EFFORT`         | `reasoning.effort`               |
+
+List variables (`SERVER_KEYS`, `ZEN_KEYS`, `GO_KEYS`, `PROXIES`) accept entries separated by commas, semicolons, spaces, or newlines. Boolean variables accept `true`/`false`, `yes`/`no`, `on`/`off`, or `1`/`0`.
+
+Two extra variables shape startup:
+
+- `CONFIG_JSON` supplies the whole configuration as JSON when the `-config` file does not exist. It is decoded exactly like a file, and the individual overrides above still win over it.
+- `ENV_FILE` is the `.env` path when `-env` is not passed.
+
+The service starts without a `config.json` when the environment provides `server_keys`, so a container or platform needs no files at all:
+
+```bash
+OPENCODE2API_SERVER_KEYS=sk-local-1 \
+OPENCODE2API_ANONYMOUS=true \
+OPENCODE2API_WEBUI_ENABLED=true \
+OPENCODE2API_WEBUI_USERNAME=admin \
+OPENCODE2API_WEBUI_PASSWORD=choose-a-long-password \
+PORT=8080 \
+./opencode2api -config /nonexistent/config.json
+```
+
+Because the environment wins on every load, a value it pins also wins after a reload. Change such a setting at its source rather than in the WebUI, or the next restart will restore the environment value. A plaintext `OPENCODE2API_WEBUI_PASSWORD` is hashed on startup and saved as `webui.password_hash`, exactly like a password written to the file.
 
 ## Docker
 

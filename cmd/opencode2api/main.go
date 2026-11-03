@@ -26,9 +26,28 @@ var version = "dev"
 func main() {
 	buildinfo.Version = version
 	configPath := flag.String("config", "config.json", "path to config.json")
+	envPath := flag.String("env", "", "path to a .env file loaded before the configuration (default .env when present)")
 	listen := flag.String("listen", "", "override the configured API listen address")
 	webListen := flag.String("web-listen", "", "override the configured WebUI listen address")
 	flag.Parse()
+
+	envFile := *envPath
+	if envFile == "" {
+		envFile = os.Getenv("ENV_FILE")
+	}
+	explicitEnv := envFile != ""
+	if envFile == "" {
+		envFile = ".env"
+	}
+	loaded, err := config.LoadDotEnv(envFile)
+	if err != nil {
+		slog.Error("dotenv error", "error", err)
+		os.Exit(1)
+	}
+	if explicitEnv && !loaded {
+		slog.Error("dotenv error", "error", "file not found", "path", envFile)
+		os.Exit(1)
+	}
 
 	cfg, err := config.Load(*configPath)
 	if err != nil {

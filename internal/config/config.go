@@ -276,20 +276,10 @@ func (cfg PerformanceConfig) AttemptTimeout(requestTimeout time.Duration) time.D
 	return requestTimeout
 }
 
-// Load reads the config file at path, strips its // and /* */ comments, and
-// decodes it over the built-in defaults. Decoding is strict: unknown fields
-// and anything after the first JSON value are errors. The result is then
-// checked by Normalize.
-func Load(path string) (Config, error) {
-	data, err := os.ReadFile(path)
-	if err != nil {
-		return Config{}, fmt.Errorf("read %s: %w", path, err)
-	}
-	data, err = stripJSONComments(data)
-	if err != nil {
-		return Config{}, fmt.Errorf("parse %s: %w", path, err)
-	}
-	cfg := Config{
+// defaults returns the built-in configuration a file or the environment is
+// decoded over.
+func defaults() Config {
+	return Config{
 		Listen:      "127.0.0.1:8080",
 		Warp:        WarpConfig{PoolSize: 2, Stack: string(warp.DefaultStack)},
 		Upstream:    UpstreamConfig{Zen: "https://opencode.ai/zen", Go: "https://opencode.ai/zen/go", Anonymous: "https://opencode.ai/inference"},
@@ -300,6 +290,47 @@ func Load(path string) (Config, error) {
 		WebUI:       WebUIConfig{Listen: "0.0.0.0:8081", SessionTTLMinutes: 720},
 		Prefer:      TierGo,
 	}
+}
+
+// Load reads the config file at path, strips its // and /* */ comments, and
+// decodes it over the built-in defaults. Decoding is strict: unknown fields
+// and anything after the first JSON value are errors.
+//
+// When the file does not exist but the environment supplies a configuration
+// (CONFIG_JSON, or OPENCODE2API_SERVER_KEYS), Load starts from the defaults
+// instead of failing, which lets a platform deploy the binary with variables
+// alone. Environment overrides are applied last and therefore win over the
+// file. The result is then checked by Normalize.
+func Load(path string) (Config, error) {
+	cfg, err := loadFile(path)
+	if err != nil {
+		return Config{}, err
+	}
+	if err := applyEnvironment(&cfg); err != nil {
+		return Config{}, err
+	}
+	return Normalize(path, cfg)
+}
+
+// loadFile decodes the file at path over the defaults. A missing file is only
+// tolerated when the environment can stand in for it.
+func loadFile(path string) (Config, error) {
+	cfg := defaults()
+	data, err := os.ReadFile(path)
+	if err != nil {
+		if !os.IsNotExist(err) || !environmentConfigures() {
+			return Config{}, fmt.Errorf("read %s: %w", path, err)
+		}
+		raw := strings.TrimSpace(os.Getenv(EnvConfigJSON))
+		if raw == "" {
+			return cfg, nil
+		}
+		data = []byte(raw)
+	}
+	data, err = stripJSONComments(data)
+	if err != nil {
+		return Config{}, fmt.Errorf("parse %s: %w", path, err)
+	}
 	dec := json.NewDecoder(bytes.NewReader(data))
 	dec.DisallowUnknownFields()
 	if err := dec.Decode(&cfg); err != nil {
@@ -308,7 +339,7 @@ func Load(path string) (Config, error) {
 	if err := jsonutil.EnsureEOF(dec); err != nil {
 		return Config{}, fmt.Errorf("parse %s: %w", path, err)
 	}
-	return Normalize(path, cfg)
+	return cfg, nil
 }
 
 // Normalize resolves external inputs and validates a Config supplied by
